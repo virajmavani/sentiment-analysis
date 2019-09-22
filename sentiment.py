@@ -1,6 +1,7 @@
 import re
 import nltk
 import numpy as np
+from sklearn.naive_bayes import GaussianNB
 
 
 re_begin = re.compile(r"(’)(\w+ )")
@@ -98,34 +99,96 @@ def get_features(preprocessed_snippet):
     feature_vector = np.zeros(len(vocabulary))
     for token, pos in preprocessed_snippet:
         if token.find("EDIT_") == -1:
-            feature_vector[vocabulary[token]] += 1
+            if vocabulary.get(token, None) is not None:
+                feature_vector[vocabulary[token]] += 1
     return feature_vector
+
+
+def normalize(X):
+    """
+
+    :param X:
+    :return:
+    """
+    n = X.shape[1]
+    for i in range(n):
+        col = X[:, i]
+        X[:, i] = (col - col.min()) / (col.max() - col.min())
+
+    return X
+
+
+def evaluate_predictions(y_pred, y_true):
+    tp = 0
+    fp = 0
+    fn = 0
+    for y_p, y_t in zip(y_pred, y_true):
+        if y_p == y_t == 1:
+            tp += 1
+        if y_t == 0 and y_p == 1:
+            fp += 1
+        if y_t == 1 and y_p == 0:
+            fn += 1
+
+    precision = tp / (tp + fp)
+    recall = tp / (tp + fn)
+    fmeasure = (2 * (precision * recall)) / (precision + recall)
+    return tuple([precision, recall, fmeasure])
 
 
 if __name__ == '__main__':
     corpus_path = "train.txt"
     corpus = load_corpus(corpus_path)
-    tokenized_corpus = []
+    preprocessed_corpus = []
     for line in corpus:
-        tokenized_corpus.append(tuple([tokenize(line[0]), line[1]]))
+        preprocessed_corpus.append(tuple([tokenize(line[0]), line[1]]))
 
-    for idx, line in enumerate(tokenized_corpus):
+    for idx, line in enumerate(preprocessed_corpus):
         edited_corpus = tag_edits(line[0])
         negated_edited_corpus = tag_negation(edited_corpus)
-        tokenized_corpus[idx] = tuple([negated_edited_corpus, line[1]])
+        preprocessed_corpus[idx] = tuple([negated_edited_corpus, line[1]])
 
     idx = 0
-    for line, label in tokenized_corpus:
+    for line, label in preprocessed_corpus:
         for token, pos in line:
             if token.find("EDIT_") == -1:
                 if vocabulary.get(token, None) is None:
                     vocabulary[token] = idx
                     idx += 1
 
-    X_train = np.empty([len(tokenized_corpus), len(vocabulary)])
-    y_train = np.empty([len(tokenized_corpus), 1])
-    for sample, label in tokenized_corpus:
-        X = get_features(sample)
-        y = label
+    X_train = np.empty([len(preprocessed_corpus), len(vocabulary)])
+    y_train = np.empty([len(preprocessed_corpus), ])
+    for idx, sample in enumerate(preprocessed_corpus):
+        X = get_features(sample[0])
+        y = sample[1]
+        X_train[idx] = X
+        y_train[idx] = y
 
+    X_train = normalize(X_train)
 
+    model = GaussianNB()
+    model.fit(X_train, y_train)
+
+    test_corpus_path = "test.txt"
+    test_corpus = load_corpus(test_corpus_path)
+
+    preprocessed_test_corpus = []
+    for line in test_corpus:
+        preprocessed_test_corpus.append(tuple([tokenize(line[0]), line[1]]))
+
+    for idx, line in enumerate(preprocessed_test_corpus):
+        edited_corpus = tag_edits(line[0])
+        negated_edited_corpus = tag_negation(edited_corpus)
+        preprocessed_test_corpus[idx] = tuple([negated_edited_corpus, line[1]])
+
+    X_test = np.empty([len(preprocessed_test_corpus), len(vocabulary)])
+    y_test = np.empty([len(preprocessed_test_corpus), ])
+    for idx, sample in enumerate(preprocessed_test_corpus):
+        X = get_features(sample[0])
+        y = sample[1]
+        X_test[idx] = X
+        y_test[idx] = y
+
+    y_pred = model.predict(X_test)
+
+    print(evaluate_predictions(y_pred, y_test))

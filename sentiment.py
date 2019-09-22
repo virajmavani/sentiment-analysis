@@ -15,9 +15,9 @@ vocabulary = {}
 
 def load_corpus(corpus_path):
     """
-
-    :param corpus_path:
-    :return:
+    Loading a .txt file as corpus
+    :param corpus_path: path to txt file
+    :return: list of tuples of the form (snippet, label) in file
     """
     file = open(corpus_path)
 
@@ -30,9 +30,9 @@ def load_corpus(corpus_path):
 
 def tokenize(snippet):
     """
-
-    :param snippet:
-    :return:
+    Tokenizing a snippet of text with whitespaces between apostrophe and words
+    :param snippet: string of text to be tokenized
+    :return: processed tokenized snippet
     """
     out = re.sub(re_begin, r"\1 \2", snippet)
     out = re.sub(re_end, r"\1 \2", out)
@@ -41,15 +41,15 @@ def tokenize(snippet):
     return out.split()
 
 
-def tag_edits(tokenized_snippets):
+def tag_edits(tokenized_snippet):
     """
-
-    :param tokenized_snippets:
-    :return:
+    Add edit tags to words added by editor
+    :param tokenized_snippet: list of words split on whitespaces
+    :return: tokenized snippet with EDIT meta tags
     """
     tag_edited_snippet = []
     edit_mode = False
-    for word in tokenized_snippets:
+    for word in tokenized_snippet:
         if word.find("[") != -1:
             edit_mode = True
             word = word.replace("[", "")
@@ -64,9 +64,9 @@ def tag_edits(tokenized_snippets):
 
 def tag_negation(tokenized_snippet):
     """
-
-    :param tokenized_snippet:
-    :return:
+    Add negation tags to words followed by a negation word
+    :param tokenized_snippet: processed snippet split on whitespaces with EDIT meta tag
+    :return: processed tokenized snippet with EDIT and NOT meta tags
     """
     negation_words = set([r"not", r"no", r"cannot", r"never"])
     tokens = tokenized_snippet.copy()
@@ -92,9 +92,9 @@ def tag_negation(tokenized_snippet):
 
 def get_features(preprocessed_snippet):
     """
-
-    :param preprocessed_snippet:
-    :return:
+    Get 1D feature vector for the preprocessed snippet
+    :param preprocessed_snippet: Preprocessed tokenized snippet with EDIT and NOT meta tags
+    :return: 1D Feature Vector
     """
     feature_vector = np.zeros(len(vocabulary))
     for token, pos in preprocessed_snippet:
@@ -106,9 +106,9 @@ def get_features(preprocessed_snippet):
 
 def normalize(X):
     """
-
-    :param X:
-    :return:
+    Min-max normalize array to get values in 0-1 range
+    :param X: 2D feature matrix
+    :return: Normalized 2D feature matrix
     """
     n = X.shape[1]
     for i in range(n):
@@ -119,6 +119,12 @@ def normalize(X):
 
 
 def evaluate_predictions(y_pred, y_true):
+    """
+    Find precision, recall and f-measure of model on test set
+    :param y_pred: Model predictions on test set
+    :param y_true: True labels
+    :return: Tuple of (precision, recall, fmeasure)
+    """
     tp = 0
     fp = 0
     fn = 0
@@ -137,6 +143,7 @@ def evaluate_predictions(y_pred, y_true):
 
 
 if __name__ == '__main__':
+
     corpus_path = "train.txt"
     corpus = load_corpus(corpus_path)
     preprocessed_corpus = []

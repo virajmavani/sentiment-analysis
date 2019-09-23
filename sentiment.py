@@ -2,15 +2,20 @@ import re
 import nltk
 import numpy as np
 from sklearn.naive_bayes import GaussianNB
+from sklearn.linear_model import LogisticRegression
 
 
-re_begin = re.compile(r"(’)(\w+ )")
-re_end = re.compile(r"( \w+)(’)")
-re_both = re.compile("(’)(\w+)(’)")
+re_begin = re.compile(r"( ')(\w+ )")
+re_end = re.compile(r"( \w+)(' )")
+re_both = re.compile("( ')(\w+)(' )")
 
+re_exp = re.compile(r"(' [0-9]+s\b)|(' em\b)|(' tis\b)")
+
+negation_tokens = re.compile(r"(\bno\b)|(\bnever\b)|(\bnot\b)|(\bcannot\b)|(\w+n't)")
 negation_ending_tokens = set([r"but", r"nevertheless", r"however", r".", r"?", r"!", r";"])
 
 vocabulary = {}
+reverse_vocabulary = {}
 
 
 def load_corpus(corpus_path):
@@ -35,9 +40,13 @@ def tokenize(snippet):
     :return: processed tokenized snippet
     """
     out = re.sub(re_begin, r"\1 \2", snippet)
+    found = re.findall(re_exp, out)
+    if len(found) != 0:
+        for elem in found[0]:
+            if elem != '':
+                out = out.replace(elem, elem.replace(" ", ""))
     out = re.sub(re_end, r"\1 \2", out)
     out = re.sub(re_both, r"\1 \2 \3", out)
-
     return out.split()
 
 
@@ -68,7 +77,6 @@ def tag_negation(tokenized_snippet):
     :param tokenized_snippet: processed snippet split on whitespaces with EDIT meta tag
     :return: processed tokenized snippet with EDIT and NOT meta tags
     """
-    negation_words = set([r"not", r"no", r"cannot", r"never"])
     tokens = tokenized_snippet.copy()
     for i in range(len(tokens)):
         if tokens[i][:5] == "EDIT_":
@@ -79,12 +87,12 @@ def tag_negation(tokenized_snippet):
     tagged_tokens = nltk.pos_tag(tokens)
     negate = False
     for idx, token in enumerate(tagged_tokens):
-        if token[0] in negation_words or token[0][(len(token)-3):] == r"n't":
+        if negate:
+            tokenized_snippet[idx] = "NOT_" + tokenized_snippet[idx]
+        if negation_tokens.match(token[0]):
             negate = True
             if (idx < len(tokens) - 1) and tagged_tokens[idx+1][0] == r"only":
                 negate = False
-        if negate:
-            tokenized_snippet[idx] = "NOT_" + tokenized_snippet[idx]
         if token[0] in negation_ending_tokens or token[1] == "JJR" or token[1] == "RBR":
             negate = False
     return [tuple([word, pos[1]]) for word, pos in zip(tokenized_snippet, tagged_tokens)]
@@ -142,8 +150,23 @@ def evaluate_predictions(y_pred, y_true):
     return tuple([precision, recall, fmeasure])
 
 
-if __name__ == '__main__':
+def top_features(logreg_model, k):
+    """
 
+    :param logreg_model:
+    :param k:
+    :return:
+    """
+    weights = logreg_model.coef_
+    weights = weights.tolist()[0]
+    indexed_weights = [tuple([i, weight]) for i, weight in enumerate(weights)]
+    indexed_weights.sort(key=lambda x: x[1], reverse=True)
+    req_weights = indexed_weights[:k]
+    top_k = [tuple([reverse_vocabulary[i], weight]) for i, weight in req_weights]
+    return top_k
+
+
+if __name__ == '__main__':
     corpus_path = "train.txt"
     corpus = load_corpus(corpus_path)
     preprocessed_corpus = []
@@ -161,6 +184,7 @@ if __name__ == '__main__':
             if token.find("EDIT_") == -1:
                 if vocabulary.get(token, None) is None:
                     vocabulary[token] = idx
+                    reverse_vocabulary[idx] = token
                     idx += 1
 
     X_train = np.empty([len(preprocessed_corpus), len(vocabulary)])
@@ -198,4 +222,13 @@ if __name__ == '__main__':
 
     y_pred = model.predict(X_test)
 
-    print(evaluate_predictions(y_pred, y_test))
+    print("Precision, Recall and F-measure for Naive Bayes Model:", evaluate_predictions(y_pred, y_test))
+
+    modelLR = LogisticRegression()
+    modelLR.fit(X_train, y_train)
+
+    y_pred_lr = modelLR.predict(X_test)
+
+    print("Precision, Recall and F-measure for Logistic Regression Model:", evaluate_predictions(y_pred_lr, y_test))
+
+    print(top_features(modelLR, 10))

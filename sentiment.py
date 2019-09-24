@@ -104,11 +104,16 @@ def get_features(preprocessed_snippet):
     :param preprocessed_snippet: Preprocessed tokenized snippet with EDIT and NOT meta tags
     :return: 1D Feature Vector
     """
-    feature_vector = np.zeros(len(vocabulary))
+    mod_V = len(vocabulary)
+    feature_vector = np.zeros(mod_V+3)
+    vals = score_snippet(preprocessed_snippet, dal)
     for token, pos in preprocessed_snippet:
         if token.find("EDIT_") == -1:
             if vocabulary.get(token, None) is not None:
                 feature_vector[vocabulary[token]] += 1
+    feature_vector[mod_V] = vals[0]
+    feature_vector[mod_V+1] = vals[1]
+    feature_vector[mod_V+2] = vals[2]
     return feature_vector
 
 
@@ -152,19 +157,62 @@ def evaluate_predictions(y_pred, y_true):
 
 def top_features(logreg_model, k):
     """
-
-    :param logreg_model:
-    :param k:
-    :return:
+    Get top k features from the Logistic Regression Model coefficients
+    :param logreg_model: sklearn.linear_model.LogisticRegression model
+    :param k: Number of features we want
+    :return: top_k features from the coefficients
     """
     weights = logreg_model.coef_
     weights = weights.tolist()[0]
-    indexed_weights = [tuple([i, weight]) for i, weight in enumerate(weights)]
+    indexed_weights = [tuple([i, abs(weight)]) for i, weight in enumerate(weights[:(len(weights)-3)])]
     indexed_weights.sort(key=lambda x: x[1], reverse=True)
     req_weights = indexed_weights[:k]
     top_k = [tuple([reverse_vocabulary[i], weight]) for i, weight in req_weights]
     return top_k
 
+
+def load_dal(dal_path):
+    """
+
+    :param dal_path:
+    :return:
+    """
+    file = open(dal_path)
+    lines = file.readlines()
+    dal = {}
+    for record in lines[1:]:
+        word, activation, evaluation, imagery = record.split("\t")
+        dal[word] = tuple([float(activation), float(evaluation), float(imagery)])
+    return dal
+
+
+def score_snippet(preprocessed_snippet, dal):
+    """
+
+    :param preprocessed_snippet:
+    :param dal:
+    :return:
+    """
+    activation = 0
+    evaluation = 0
+    imagery = 0
+    count = 0
+    for token, pos in preprocessed_snippet:
+        if token.find("EDIT_") == -1:
+            if dal.get(token, None) is not None:
+                vals = dal[token]
+                activation += vals[0]
+                evaluation += vals[1]
+                imagery += vals[2]
+                count += 1
+
+    if count != 0:
+        return tuple([float(activation)/count, float(evaluation)/count, float(imagery)/count])
+    else:
+        return tuple([0., 0., 0.])
+
+
+dal = load_dal("dict_of_affect.txt")
 
 if __name__ == '__main__':
     corpus_path = "train.txt"
@@ -187,7 +235,7 @@ if __name__ == '__main__':
                     reverse_vocabulary[idx] = token
                     idx += 1
 
-    X_train = np.empty([len(preprocessed_corpus), len(vocabulary)])
+    X_train = np.empty([len(preprocessed_corpus), len(vocabulary)+3])
     y_train = np.empty([len(preprocessed_corpus), ])
     for idx, sample in enumerate(preprocessed_corpus):
         X = get_features(sample[0])
@@ -212,7 +260,7 @@ if __name__ == '__main__':
         negated_edited_corpus = tag_negation(edited_corpus)
         preprocessed_test_corpus[idx] = tuple([negated_edited_corpus, line[1]])
 
-    X_test = np.empty([len(preprocessed_test_corpus), len(vocabulary)])
+    X_test = np.empty([len(preprocessed_test_corpus), len(vocabulary)+3])
     y_test = np.empty([len(preprocessed_test_corpus), ])
     for idx, sample in enumerate(preprocessed_test_corpus):
         X = get_features(sample[0])
